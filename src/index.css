@@ -1,0 +1,161 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    background-color: #f8fafc;
+  }
+
+  body {
+    @apply m-0 font-body antialiased transition-colors duration-500;
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  html.dark body {
+    background-color: #030712;
+    color: #f3f4f6;
+  }
+
+  * {
+    @apply box-border;
+  }
+
+  a {
+    @apply no-underline;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 9999px;
+  }
+
+  html.dark ::-webkit-scrollbar-thumb {
+    background: rgba(51, 65, 85, 0.5);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.5);
+  }
+
+  html.dark ::-webkit-scrollbar-thumb:hover {
+    background: rgba(51, 65, 85, 0.7);
+  }
+}
+
+@layer components {
+  .section-shell {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Glassmorphism Classes */
+  .glass-panel {
+    @apply border border-slate-200/60 bg-white/70 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/75;
+  }
+
+  .glass-card {
+    @apply border border-slate-200/50 bg-white/40 backdrop-blur-lg transition-all duration-300 dark:border-white/5 dark:bg-slate-950/40;
+  }
+
+  .glass-input {
+    @apply border border-slate-200/70 bg-white/50 px-4 py-3 text-sm transition-all focus:border-primary-blue focus:bg-white focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-accent-glow dark:focus:bg-slate-950/80;
+  }
+
+  /* Cyber Grid Background */
+  .bg-cyber-grid {
+    background-size: 40px 40px;
+    background-image: 
+      linear-gradient(to right, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+  }
+
+  html.dark .bg-cyber-grid {
+    background-image: 
+      linear-gradient(to right, rgba(96, 165, 250, 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(96, 165, 250, 0.03) 1px, transparent 1px);
+  }
+
+  /* Custom Glow Animations */
+  .glow-text-blue {
+    text-shadow: 0 0 12px rgba(37, 99, 235, 0.35);
+  }
+  
+  .glow-text-purple {
+    text-shadow: 0 0 12px rgba(124, 58, 237, 0.35);
+  }
+}
+
+/* Shimmer Animation */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.shimmer-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.2) 20%,
+    rgba(255, 255, 255, 0.6) 60%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: shimmer 2.5s infinite;
+}
+
+/* Laser Scanner */
+@keyframes scan {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.laser-scanner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #60a5fa, #7c3aed, #60a5fa, transparent);
+  box-shadow: 0 0 12px #60a5fa, 0 0 4px #7c3aed;
+  animation: scan 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
