@@ -1,11 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Mic, Route, Sparkles, CheckCircle2, AlertTriangle, 
-  Send, Bot, ChevronRight, Play, RefreshCw, Trophy, BookOpen, Clock, Lock 
+  Send, Bot, ChevronRight, Play, RefreshCw, Trophy, BookOpen, Clock, Lock, Volume2, VolumeX 
 } from 'lucide-react';
 
 type TabType = 'cv' | 'interview' | 'roadmap';
+
+type InterviewFeedback = {
+  score: number;
+  positives: string[];
+  suggestions: string[];
+};
+
+type InterviewMessage = {
+  id?: number;
+  sender: 'ai' | 'user';
+  text: string;
+  feedback?: InterviewFeedback;
+};
 
 type InteractiveDemoProps = {
   isLoggedIn: boolean;
@@ -14,6 +27,8 @@ type InteractiveDemoProps = {
 
 export default function InteractiveDemo({ isLoggedIn, setIsLoggedIn }: InteractiveDemoProps) {
   const [activeTab, setActiveTab] = useState<TabType>('cv');
+  const messageIdRef = useRef(1);
+  const lastSpokenMessageIdRef = useRef<string | null>(null);
 
   // Inline Login States
   const [inlineEmail, setInlineEmail] = useState('');
@@ -80,14 +95,97 @@ export default function InteractiveDemo({ isLoggedIn, setIsLoggedIn }: Interacti
 
   // --- TAB 2: INTERVIEW STATES ---
   const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY?.trim();
+  const supportsSpeechSynthesis = typeof window !== 'undefined' && 'speechSynthesis' in window;
   const [interviewRole, setInterviewRole] = useState<'frontend' | 'pm'>('frontend');
-  const [messages, setMessages] = useState<Array<{ sender: 'ai' | 'user'; text: string; feedback?: any }>>([
-    { sender: 'ai', text: 'Xin chào! Tôi là AI Mock Interviewer. Bạn đã sẵn sàng chạy thử buổi phỏng vấn vị trí Frontend Developer Intern chưa?' }
+  const [speechEnabled, setSpeechEnabled] = useState(true);
+  const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const getInterviewGreeting = (role: 'frontend' | 'pm') =>
+    role === 'frontend'
+      ? 'Xin chào! Tôi là AI Mock Interviewer. Bạn đã sẵn sàng chạy thử buổi phỏng vấn vị trí Frontend Developer Intern chưa?'
+      : 'Xin chào! Tôi là AI Mock Interviewer. Bạn đã sẵn sàng chạy thử buổi phỏng vấn vị trí Product Manager Intern chưa?';
+  const createInterviewMessage = (
+    sender: 'ai' | 'user',
+    text: string,
+    feedback?: InterviewFeedback
+  ): InterviewMessage => ({
+    id: messageIdRef.current++,
+    sender,
+    text,
+    feedback,
+  });
+  const [messages, setMessages] = useState<InterviewMessage[]>([
+    { sender: 'ai', text: getInterviewGreeting('frontend') }
   ]);
   const [interviewState, setInterviewState] = useState<'intro' | 'answering' | 'analyzed'>('intro');
   const [userAnswer, setUserAnswer] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const missingGeminiKeyMessage = 'Chưa cấu hình Gemini API key. Hãy thêm VITE_GEMINI_API_KEY vào file .env để dùng tính năng phỏng vấn AI.';
+
+  const stopSpeaking = () => {
+    if (!supportsSpeechSynthesis) return;
+    window.speechSynthesis.cancel();
+  };
+
+  const speakAiMessage = (text: string) => {
+    if (!supportsSpeechSynthesis || !speechEnabled) return;
+    const trimmedText = text.trim();
+    if (!trimmedText) return;
+
+    const utterance = new SpeechSynthesisUtterance(trimmedText);
+    utterance.lang = 'vi-VN';
+
+    const preferredVoice =
+      speechVoices.find((voice) => voice.lang.toLowerCase().startsWith('vi')) ??
+      speechVoices.find((voice) => voice.default) ??
+      speechVoices[0];
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      utterance.lang = preferredVoice.lang;
+    }
+
+    stopSpeaking();
+    window.speechSynthesis.speak(utterance);
+  };
+
+  useEffect(() => {
+    if (!supportsSpeechSynthesis) return;
+
+    const syncVoices = () => {
+      setSpeechVoices(window.speechSynthesis.getVoices());
+    };
+
+    syncVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', syncVoices);
+
+    return () => {
+      window.speechSynthesis.removeEventListener('voiceschanged', syncVoices);
+      window.speechSynthesis.cancel();
+    };
+  }, [supportsSpeechSynthesis]);
+
+  useEffect(() => {
+    const latestAiMessage = [...messages].reverse().find((message) => message.sender === 'ai');
+
+    if (!latestAiMessage) return;
+
+    const latestSignature = `${messages.length}:${latestAiMessage.text}`;
+
+    if (activeTab !== 'interview' || !supportsSpeechSynthesis) {
+      stopSpeaking();
+      return;
+    }
+
+    if (!speechEnabled) {
+      stopSpeaking();
+      return;
+    }
+
+    if (lastSpokenMessageIdRef.current === latestSignature) return;
+
+    lastSpokenMessageIdRef.current = latestSignature;
+    speakAiMessage(latestAiMessage.text);
+  }, [activeTab, messages, speechEnabled, supportsSpeechSynthesis, speechVoices]);
 
   const callGeminiAPI = async (
     history: Array<{ sender: 'ai' | 'user'; text: string }>,
@@ -173,7 +271,7 @@ Lưu ý:
 
   const startInterview = async () => {
     setInterviewState('answering');
-    const startMsg = { sender: 'user' as const, text: 'Sẵn sàng, bắt đầu thôi!' };
+    const startMsg = createInterviewMessage('user', 'Sẵn sàng, bắt đầu thôi!');
     const updatedMessages = [...messages, startMsg];
     setMessages(updatedMessages);
     setIsTyping(true);
@@ -182,34 +280,31 @@ Lưu ý:
       // Ask Gemini for the first question
       const result = await callGeminiAPI(updatedMessages, interviewRole);
       setIsTyping(false);
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
-        { sender: 'ai', text: result.nextQuestion }
+        createInterviewMessage('ai', result.nextQuestion)
       ]);
     } catch (error) {
       console.error("Lỗi khi kết nối Gemini khởi động:", error);
       setIsTyping(false);
 
       if (error instanceof Error && error.message === 'Missing Gemini API key') {
-        setMessages(prev => [
+        setMessages((prev) => [
           ...prev,
-          {
-            sender: 'ai',
-            text: missingGeminiKeyMessage
-          }
+          createInterviewMessage('ai', missingGeminiKeyMessage)
         ]);
         return;
       }
 
       // Fallback:
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
-        { 
-          sender: 'ai', 
-          text: interviewRole === 'frontend'
+        createInterviewMessage(
+          'ai',
+          interviewRole === 'frontend'
             ? 'Câu hỏi: Hãy giới thiệu về bản thân và một dự án React/Next.js gần đây mà bạn tâm đắc nhất?'
-            : 'Câu hỏi: Hãy giới thiệu về bản thân và chia sẻ về một sản phẩm bạn từng tham gia phát triển?' 
-        }
+            : 'Câu hỏi: Hãy giới thiệu về bản thân và chia sẻ về một sản phẩm bạn từng tham gia phát triển?'
+        )
       ]);
     }
   };
@@ -217,7 +312,7 @@ Lưu ý:
   const submitAnswer = async () => {
     if (!userAnswer.trim()) return;
     const ans = userAnswer;
-    const userMsg = { sender: 'user' as const, text: ans };
+    const userMsg = createInterviewMessage('user', ans);
     const updatedMessages = [...messages, userMsg];
     
     setMessages(updatedMessages);
@@ -229,13 +324,9 @@ Lưu ý:
       setIsTyping(false);
       
       // If we got feedback, we can show it alongside the next question
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
-        {
-          sender: 'ai',
-          text: result.nextQuestion,
-          feedback: result.feedback || undefined
-        }
+        createInterviewMessage('ai', result.nextQuestion, result.feedback || undefined)
       ]);
       setInterviewState('analyzed');
     } catch (error) {
@@ -243,28 +334,25 @@ Lưu ý:
       setIsTyping(false);
 
       if (error instanceof Error && error.message === 'Missing Gemini API key') {
-        setMessages(prev => [
+        setMessages((prev) => [
           ...prev,
-          {
-            sender: 'ai',
-            text: missingGeminiKeyMessage
-          }
+          createInterviewMessage('ai', missingGeminiKeyMessage)
         ]);
         return;
       }
 
       // Fallback to static mock answer:
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
-        {
-          sender: 'ai',
-          text: 'Cảm ơn câu trả lời của bạn! Bạn xử lý việc bất đồng ý kiến về giải pháp kỹ thuật với đồng nghiệp trong nhóm như thế nào?',
-          feedback: {
+        createInterviewMessage(
+          'ai',
+          'Cảm ơn câu trả lời của bạn! Bạn xử lý việc bất đồng ý kiến về giải pháp kỹ thuật với đồng nghiệp trong nhóm như thế nào?',
+          {
             score: 82,
             positives: ['Cung cấp lời giải thích trực tiếp', 'Nhắc đến tính năng giỏ hàng'],
             suggestions: ['Hãy chia sẻ sâu hơn về khó khăn kỹ thuật cụ thể bạn gặp phải bằng mô hình STAR.']
           }
-        }
+        )
       ]);
       setInterviewState('analyzed');
     }
@@ -534,8 +622,9 @@ Lưu ý:
                   <button 
                     onClick={() => {
                       if (interviewState === 'intro') {
+                        lastSpokenMessageIdRef.current = null;
                         setInterviewRole('frontend');
-                        setMessages([{ sender: 'ai', text: 'Xin chào! Tôi là AI Mock Interviewer. Bạn đã sẵn sàng chạy thử buổi phỏng vấn vị trí Frontend Developer Intern chưa?' }]);
+                        setMessages([{ sender: 'ai', text: getInterviewGreeting('frontend') }]);
                       }
                     }}
                     disabled={interviewState !== 'intro'}
@@ -550,8 +639,9 @@ Lưu ý:
                   <button 
                     onClick={() => {
                       if (interviewState === 'intro') {
+                        lastSpokenMessageIdRef.current = null;
                         setInterviewRole('pm');
-                        setMessages([{ sender: 'ai', text: 'Xin chào! Tôi là AI Mock Interviewer. Bạn đã sẵn sàng chạy thử buổi phỏng vấn vị trí Product Manager Intern chưa?' }]);
+                        setMessages([{ sender: 'ai', text: getInterviewGreeting('pm') }]);
                       }
                     }}
                     disabled={interviewState !== 'intro'}
@@ -563,6 +653,35 @@ Lưu ý:
                   >
                     Biz (PM)
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const latestAiMessage = [...messages].reverse().find((message) => message.sender === 'ai');
+                      setSpeechEnabled((prev) => {
+                        const nextValue = !prev;
+                        if (!nextValue) {
+                          stopSpeaking();
+                        } else if (latestAiMessage) {
+                          lastSpokenMessageIdRef.current = `${messages.length}:${latestAiMessage.text}`;
+                        }
+                        return nextValue;
+                      });
+                    }}
+                    disabled={!supportsSpeechSynthesis}
+                    title={
+                      supportsSpeechSynthesis
+                        ? speechEnabled ? 'Tắt giọng nói AI' : 'Bật giọng nói AI'
+                        : 'Trình duyệt không hỗ trợ Web Speech API'
+                    }
+                    className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] font-medium transition ${
+                      speechEnabled
+                        ? 'border-primary-blue/30 bg-primary-blue/10 text-primary-blue dark:border-accent-glow/30 dark:bg-accent-glow/10 dark:text-accent-glow'
+                        : 'border-slate-200 text-slate-600 dark:border-white/5 dark:text-slate-400'
+                    } ${!supportsSpeechSynthesis ? 'cursor-not-allowed opacity-50' : ''}`}
+                  >
+                    {speechEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+                    <span className="hidden sm:inline">{speechEnabled ? 'Voice on' : 'Voice off'}</span>
+                  </button>
                 </div>
               </div>
 
@@ -570,7 +689,7 @@ Lưu ý:
               <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin">
                 {messages.map((msg, i) => (
                   <div 
-                    key={i} 
+                    key={msg.id ?? i} 
                     className={`flex gap-2.5 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     {msg.sender === 'ai' && (
@@ -677,11 +796,10 @@ Lưu ý:
                 ) : (
                   <button
                     onClick={() => {
+                      lastSpokenMessageIdRef.current = null;
                       setMessages([{ 
                         sender: 'ai', 
-                        text: interviewRole === 'frontend' 
-                          ? 'Xin chào! Tôi là AI Mock Interviewer. Bạn đã sẵn sàng chạy thử buổi phỏng vấn vị trí Frontend Developer Intern chưa?'
-                          : 'Xin chào! Tôi là AI Mock Interviewer. Bạn đã sẵn sàng chạy thử buổi phỏng vấn vị trí Product Manager Intern chưa?'
+                        text: getInterviewGreeting(interviewRole)
                       }]);
                       setInterviewState('intro');
                     }}
