@@ -29,6 +29,7 @@ export default function InteractiveDemo({ isLoggedIn, setIsLoggedIn }: Interacti
   const [activeTab, setActiveTab] = useState<TabType>('cv');
   const messageIdRef = useRef(1);
   const lastSpokenMessageIdRef = useRef<string | null>(null);
+  const speechRetryIntervalRef = useRef<number | null>(null);
 
   // Inline Login States
   const [inlineEmail, setInlineEmail] = useState('');
@@ -126,6 +127,22 @@ export default function InteractiveDemo({ isLoggedIn, setIsLoggedIn }: Interacti
     window.speechSynthesis.cancel();
   };
 
+  const getPreferredSpeechVoice = () => {
+    const normalizedVoices = speechVoices.map((voice) => ({
+      voice,
+      lang: voice.lang.toLowerCase(),
+      name: voice.name.toLowerCase(),
+    }));
+
+    return (
+      normalizedVoices.find(({ lang }) => lang === 'vi-vn')?.voice ??
+      normalizedVoices.find(({ lang }) => lang.startsWith('vi'))?.voice ??
+      normalizedVoices.find(({ name }) => name.includes('tiếng việt') || name.includes('tieng viet'))?.voice ??
+      normalizedVoices.find(({ name }) => name.includes('vietnamese') || name.includes('vietnam'))?.voice ??
+      null
+    );
+  };
+
   const speakAiMessage = (text: string) => {
     if (!supportsSpeechSynthesis || !speechEnabled) return;
     const trimmedText = text.trim();
@@ -135,7 +152,7 @@ export default function InteractiveDemo({ isLoggedIn, setIsLoggedIn }: Interacti
     utterance.lang = 'vi-VN';
 
     const preferredVoice =
-      speechVoices.find((voice) => voice.lang.toLowerCase().startsWith('vi')) ??
+      getPreferredSpeechVoice() ??
       speechVoices.find((voice) => voice.default) ??
       speechVoices[0];
 
@@ -165,6 +182,30 @@ export default function InteractiveDemo({ isLoggedIn, setIsLoggedIn }: Interacti
   }, [supportsSpeechSynthesis]);
 
   useEffect(() => {
+    if (!supportsSpeechSynthesis || speechVoices.length > 0) {
+      if (speechRetryIntervalRef.current !== null) {
+        window.clearInterval(speechRetryIntervalRef.current);
+        speechRetryIntervalRef.current = null;
+      }
+      return;
+    }
+
+    speechRetryIntervalRef.current = window.setInterval(() => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        setSpeechVoices(voices);
+      }
+    }, 250);
+
+    return () => {
+      if (speechRetryIntervalRef.current !== null) {
+        window.clearInterval(speechRetryIntervalRef.current);
+        speechRetryIntervalRef.current = null;
+      }
+    };
+  }, [supportsSpeechSynthesis, speechVoices.length]);
+
+  useEffect(() => {
     const latestAiMessage = [...messages].reverse().find((message) => message.sender === 'ai');
 
     if (!latestAiMessage) return;
@@ -181,10 +222,15 @@ export default function InteractiveDemo({ isLoggedIn, setIsLoggedIn }: Interacti
       return;
     }
 
+    if (speechVoices.length === 0) {
+      window.speechSynthesis.getVoices();
+      return;
+    }
+
     if (lastSpokenMessageIdRef.current === latestSignature) return;
 
-    lastSpokenMessageIdRef.current = latestSignature;
     speakAiMessage(latestAiMessage.text);
+    lastSpokenMessageIdRef.current = latestSignature;
   }, [activeTab, messages, speechEnabled, supportsSpeechSynthesis, speechVoices]);
 
   const callGeminiAPI = async (
